@@ -8,10 +8,10 @@ edition = "2018"
 
 [dependencies]
 libc = "0.2.80"
-xmas-elf = "0.7.0"
-zero = "0.1"
 goblin = "0.2.3"
-plain = "0.2.3"
 cstr = "0.2.5"
 backtrace = "0.3.55"
 owoify = "0.1.5"
+
+[dev-dependencies]
+doc-comment = "0.3.3"

@@ -105,25 +105,26 @@ const PAGE_SIZE: usize = 0x1000;
 /// OwO whats this
 ///
 /// Calling this function makes all `println!()` calls uwu-ize their outputs
-///
-/// # Safety
-/// lol tbh you probably shouldn't run this function, but it probably won't crash your program
-pub unsafe fn install() -> Option<()> {
+pub fn install() -> Option<()> {
     let write = find_write()?;
-    let writeaddr = *write as *mut ();
+    // safety: it's from my code and therefore is perfect
+    let writeaddr = unsafe { *write as *mut () };
     // this should be thread safe if we only store if it's null
     // whoever gets to this first will have a valid pointer
     let v = BORING_WRITE.compare_and_swap(ptr::null_mut(), writeaddr, Ordering::SeqCst);
     if v.is_null() {
         // eprintln!("installing");
         let write_page = (write as usize) & !(PAGE_SIZE - 1);
-        libc::mprotect(
-            write_page as *mut c_void,
-            PAGE_SIZE,
-            libc::PROT_READ | libc::PROT_WRITE,
-        );
+        // safety: lol
+        unsafe {
+            libc::mprotect(
+                write_page as *mut c_void,
+                PAGE_SIZE,
+                libc::PROT_READ | libc::PROT_WRITE,
+            )
+        };
         // we were the thread that successfully wrote, so we should update the PLT
-        *write = write_uwu;
+        unsafe { *write = write_uwu };
         Some(())
     } else {
         // even if we lost, someone installed successfully
@@ -222,4 +223,10 @@ fn find_write() -> Option<*mut CWrite> {
     write
     // println!("dynamic: {:#?}", dynamic);
     // todo!()
+}
+
+#[cfg(doctest)]
+mod doctest {
+    use doc_comment::doctest;
+    doctest!("../README.md");
 }
