@@ -1,8 +1,12 @@
 [package]
 name = "pwintln"
 version = "0.1.0"
-authors = ["lf- <lf-@users.noreply.github.com>"]
+authors = ["jade <software@lfcode.ca>"]
 edition = "2018"
+license = "BSD"
+description = "println? OwO"
+documentation = "https://docs.rs/pwintln"
+repository = "https://github.com/lf-/pwintln"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
