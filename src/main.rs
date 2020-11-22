@@ -10,4 +10,8 @@ fn main() {
     println!("i love rust");
     println!("i love rust");
     std::io::stdout().write_all(b"i love rust\n").unwrap();
+
+    eprintln!("ferris is my best friend");
+    uwu_stderr(true);
+    eprintln!("ferris is my best friend");
 }

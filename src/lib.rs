@@ -7,8 +7,7 @@ use std::mem;
 use std::os::raw::*;
 use std::ptr;
 use std::slice;
-use std::sync::atomic::AtomicPtr;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 use owoify::OwOifiable;
 
@@ -23,26 +22,20 @@ use elf::reloc::reloc64;
 use elf::sym::sym64;
 
 static BORING_WRITE: AtomicPtr<()> = AtomicPtr::new(ptr::null_mut());
-static PRINT_MACHINERY: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
+static STDOUT_MACHINERY: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
+static STDERR_MACHINERY: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
+static UWU_STDOUT: AtomicBool = AtomicBool::new(true);
+static UWU_STDERR: AtomicBool = AtomicBool::new(false);
 
-/// Our uwu-ized wrapper around libc's `write(2)`.
-extern "C" fn write_uwu(fd: c_int, buf: *const c_void, count: usize) -> isize {
-    let write = BORING_WRITE.load(Ordering::SeqCst);
-    if write.is_null() {
-        // oh shit
-        std::process::abort();
-    }
-    let write: CWrite = unsafe { mem::transmute(write) };
+/// grabs a backtrace, managing the given atomic, and return a tuple of (found print machinery
+/// address, backtrace)
+fn grab_bt(machinery: &AtomicPtr<c_void>) -> (*mut c_void, backtrace::Backtrace) {
+    // atomic: we don't care about the surrounding memory at all; it's not even a problem if we
+    // write twice!
+    let mut cached_print_machinery = machinery.load(Ordering::Relaxed);
 
-    // if it's not stdout we don't care
-    if fd != 1 {
-        return write(fd, buf, count);
-    }
-
-    // now find out who called us
-    let mut cached_print_machinery = PRINT_MACHINERY.load(Ordering::SeqCst);
     // if we have not already found the print machinery, we need a textual backtrace
-    let bt = if cached_print_machinery.is_null() {
+    if cached_print_machinery.is_null() {
         let bt = backtrace::Backtrace::new();
         for fra in bt.frames() {
             for sym in fra.symbols() {
@@ -50,17 +43,53 @@ extern "C" fn write_uwu(fd: c_int, buf: *const c_void, count: usize) -> isize {
                 if pretty.starts_with("std::io::stdio::print_to") {
                     // eprintln!("found the print uwu {:?}", sym);
                     let print_addr = fra.symbol_address();
-                    PRINT_MACHINERY.store(print_addr, Ordering::SeqCst);
+                    machinery.compare_and_swap(ptr::null_mut(), print_addr, Ordering::Relaxed);
                     cached_print_machinery = print_addr;
                 }
             }
             // eprintln!("frame uwu! {:?} {:?}", fra, fra.symbols());
         }
-        bt
+        (cached_print_machinery, bt)
     } else {
         // we have the print machinery so we can take an unresolved backtrace
-        backtrace::Backtrace::new_unresolved()
+        (
+            cached_print_machinery,
+            backtrace::Backtrace::new_unresolved(),
+        )
+    }
+}
+
+/// Our uwu-ized wrapper around libc's `write(2)`.
+extern "C" fn write_uwu(fd: c_int, buf: *const c_void, count: usize) -> isize {
+    let write = BORING_WRITE.load(Ordering::Relaxed);
+    if write.is_null() {
+        // oh shit
+        std::process::abort();
+    }
+    let write: CWrite = unsafe { mem::transmute(write) };
+
+    // check if this fd can be uwu'd
+    let is_uwuable = match fd {
+        // stdout
+        1 => UWU_STDOUT.load(Ordering::Relaxed),
+        // stderr
+        2 => UWU_STDERR.load(Ordering::Relaxed),
+        _ => false,
     };
+
+    if !is_uwuable {
+        return write(fd, buf, count);
+    }
+
+    // now find out who called us
+    let (cached_print_machinery, bt) = grab_bt(if fd == 1 {
+        &STDOUT_MACHINERY
+    } else if fd == 2 {
+        &STDERR_MACHINERY
+    } else {
+        // unreachable
+        std::process::abort();
+    });
 
     // now find if we need to uwu
     let should_uwu = !cached_print_machinery.is_null()
@@ -111,7 +140,10 @@ pub fn install() -> Option<()> {
     let writeaddr = unsafe { *write as *mut () };
     // this should be thread safe if we only store if it's null
     // whoever gets to this first will have a valid pointer
-    let v = BORING_WRITE.compare_and_swap(ptr::null_mut(), writeaddr, Ordering::SeqCst);
+    // atomic: it's not a problem if the update to the function pointer is delayed as any hit of
+    // the write_uwu function will still get this original pointer that was stored atomically
+    // (the invariant we care about)
+    let v = BORING_WRITE.compare_and_swap(ptr::null_mut(), writeaddr, Ordering::Relaxed);
     if v.is_null() {
         // eprintln!("installing");
         let write_page = (write as usize) & !(PAGE_SIZE - 1);
@@ -131,6 +163,16 @@ pub fn install() -> Option<()> {
         // so it is not a failure
         Some(())
     }
+}
+
+/// Sets the uwu enabling of stdout
+pub fn uwu_stdout(should: bool) {
+    UWU_STDOUT.store(should, Ordering::Relaxed);
+}
+
+/// Sets the uwu enabling of stdout
+pub fn uwu_stderr(should: bool) {
+    UWU_STDERR.store(should, Ordering::Relaxed);
 }
 
 type CWrite = extern "C" fn(fd: c_int, buf: *const c_void, count: usize) -> isize;
@@ -220,8 +262,8 @@ fn find_write() -> Option<*mut CWrite> {
         // println!("rela! {:?}", rel);
         // println!("with name! {:?}", name);
     }
-    write
     // println!("dynamic: {:#?}", dynamic);
+    write
     // todo!()
 }
 
