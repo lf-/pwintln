@@ -1,6 +1,6 @@
 # pwintln
 
-[this is ***REMOVED***'s fault](https://twitter.com/The6P4C/status/1329725624412381185)
+[this is @the6p4c's fault](https://twitter.com/The6P4C/status/1329725624412381185)
 
 you can upgrade your rust println functions across your entire codebase to all
 be pwintln, which will automatically uwu all your messages for you.
