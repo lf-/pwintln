@@ -27,6 +27,13 @@ static STDERR_MACHINERY: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
 static UWU_STDOUT: AtomicBool = AtomicBool::new(true);
 static UWU_STDERR: AtomicBool = AtomicBool::new(false);
 
+// only uwu stuff that comes from println!/eprintln!, not manual writes
+const STDIO_NAMES: &[&str] = &[
+    "std::io::stdio::print_to",
+    "std::io::stdio::_print",
+    "std::io::stdio::_eprint",
+];
+
 /// grabs a backtrace, managing the given atomic, and return a tuple of (found print machinery
 /// address, backtrace)
 fn grab_bt(machinery: &AtomicPtr<c_void>) -> (*mut c_void, backtrace::Backtrace) {
@@ -40,7 +47,7 @@ fn grab_bt(machinery: &AtomicPtr<c_void>) -> (*mut c_void, backtrace::Backtrace)
         for fra in bt.frames() {
             for sym in fra.symbols() {
                 let pretty = format!("{}", sym.name().unwrap());
-                if pretty.starts_with("std::io::stdio::print_to") {
+                if STDIO_NAMES.iter().any(|n| pretty.starts_with(n)) {
                     // eprintln!("found the print uwu {:?}", sym);
                     let print_addr = fra.symbol_address();
                     machinery.compare_and_swap(ptr::null_mut(), print_addr, Ordering::Relaxed);
